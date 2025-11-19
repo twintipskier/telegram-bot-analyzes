@@ -314,3 +314,91 @@ def parse_pdf(file_path):
         }
 
     return full_name, date_str, analytes
+# ======================================
+#            TELEGRAM BOT
+# ======================================
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+
+    await update.message.reply_text(
+        "👋 Привет! Я бот для анализа медицинских PDF.\n\n"
+        "Отправь мне PDF с анализами — я распознаю:\n"
+        "• ФИО пациента\n"
+        "• Дату анализа\n"
+        "• Все показатели\n"
+        "• Референсные значения\n\n"
+        "И загружу всё в твою Google-таблицу.\n\n"
+        "Чтобы установить таблицу, введи:\n"
+        "/set_sheet <GoogleSheetID>\n\n"
+    )
+
+
+async def set_sheet(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """User installs Google Sheet ID."""
+    user_id = update.effective_user.id
+
+    if len(context.args) != 1:
+        await update.message.reply_text("Использование:\n/set_sheet <ID таблицы>")
+        return
+
+    sheet_id = context.args[0].strip()
+
+    set_user_sheet_id(user_id, sheet_id)
+
+    await update.message.reply_text(
+        f"✔ Google-таблица установлена!\nID: {sheet_id}"
+    )
+
+
+async def handle_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles PDF upload."""
+    user_id = update.effective_user.id
+    sheet_id = get_user_sheet_id(user_id)
+
+    if not sheet_id:
+        await update.message.reply_text(
+            "❗ Вы ещё не указали Google-таблицу.\n"
+            "Сделайте это командой:\n/set_sheet <ID>"
+        )
+        return
+
+    # Download file
+    pdf_file = await update.message.document.get_file()
+    file_path = f"/tmp/{pdf_file.file_unique_id}.pdf"
+    await pdf_file.download_to_drive(file_path)
+
+    await update.message.reply_text("📄 Обрабатываю PDF…")
+
+    # Parse PDF
+    full_name, date_str, analytes = parse_pdf(file_path)
+
+    # Google service
+    service = get_google_service()
+    if not service:
+        await update.message.reply_text("Ошибка Google OAuth.")
+        return
+
+    # Patient sheet
+    ensure_patient_sheet(service, sheet_id, full_name)
+
+    # Ensure analytes rows
+    analyte_names = list(analytes.keys())
+    ensure_rows_for_analytes(service, sheet_id, full_name, analyte_names)
+
+    # Column for date
+    date_col = get_next_date_column(service, sheet_id, full_name, date_str)
+
+    # Values → dict {analyte → value}
+    values_dict = {k: v["value"] for k in analytes.values()}
+
+    # Write values
+    write_values(service, sheet_id, full_name, date_col, values_dict)
+
+    await update.message.reply_text(
+        f"✔ Готово!\n"
+        f"Пациент: *{full_name}*\n"
+        f"Дата: *{date_str}*\n\n"
+        f"Анализы успешно добавлены в Google-таблицу.",
+        parse_mode="Markdown"
+    )
