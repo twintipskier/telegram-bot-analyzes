@@ -1,0 +1,6 @@
+python-telegram-bot==20.7
+google-api-python-client==2.119.0
+google-auth==2.27.0
+google-auth-oauthlib==1.2.0
+pdfplumber==0.10.3
+pycryptodome
