@@ -253,3 +253,64 @@ def column_number_to_letter(n):
         n, r = divmod(n - 1, 26)
         result = chr(65 + r) + result
     return result
+# ======================================
+#             PDF PARSER
+# ======================================
+
+def parse_pdf(file_path):
+    """
+    Parses a PDF with medical analyses and returns:
+    - full_name
+    - date
+    - analytes: { analyte_name: {"value":..., "ref":...} }
+    """
+
+    with pdfplumber.open(file_path) as pdf:
+        text = "\n".join([page.extract_text() or "" for page in pdf.pages])
+
+    # Normalize
+    lines = [l.strip() for l in text.split("\n") if l.strip()]
+    joined = "\n".join(lines)
+
+    # ==============================
+    # Extract FIO
+    # ==============================
+    fio_pattern = r"ФИО[:\s]+([\wЁёА-Яа-я]+\s+[\wЁёА-Яа-я]+\s+[\wЁёА-Яа-я]+)"
+    fio_match = re.search(fio_pattern, joined)
+    full_name = fio_match.group(1).strip() if fio_match else "Пациент"
+
+    # ==============================
+    # Extract date
+    # ==============================
+    date_pattern = r"(\d{2}\.\d{2}\.\d{4})"
+    date_match = re.search(date_pattern, joined)
+    date_str = date_match.group(1) if date_match else datetime.now().strftime("%d.%m.%Y")
+
+    # ==============================
+    # Extract analytes
+    # ==============================
+    analytes = {}
+
+    # Pattern like:
+    # Гемоглобин 155 г/л 135–169
+    analyte_pattern = re.compile(
+        r"([A-Za-zА-Яа-яЁё\s\-()%+]+?)\s+([\d.,<>]+)\s+[^\s]+\s+([\d.,<>]+–[\d.,<>]+|<\d+|>?\d+|отрицательно|не обнаружено)",
+        re.IGNORECASE
+    )
+
+    for match in analyte_pattern.finditer(joined):
+        analyte = match.group(1).strip()
+        value = match.group(2).strip()
+        ref = match.group(3).strip()
+
+        # Normalize reference
+        ref = ref.replace(" ", "")
+        ref = ref.replace("отрицательно", "отрицательно")
+        ref = ref.replace("необнаружено", "не обнаружено")
+
+        analytes[analyte] = {
+            "value": value,
+            "ref": ref
+        }
+
+    return full_name, date_str, analytes
