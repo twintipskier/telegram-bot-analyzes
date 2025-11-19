@@ -402,3 +402,31 @@ async def handle_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Анализы успешно добавлены в Google-таблицу.",
         parse_mode="Markdown"
     )
+# ======================================
+#               BOT RUN
+# ======================================
+
+def main():
+    telegram_token = os.environ.get("TELEGRAM_BOT_TOKEN")
+
+    if not telegram_token:
+        print("❗ ERROR: TELEGRAM_BOT_TOKEN not found in environment variables!")
+        return
+
+    application = ApplicationBuilder().token(telegram_token).build()
+
+    # Commands
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("set_sheet", set_sheet))
+
+    # PDF handler
+    application.add_handler(
+        MessageHandler(filters.Document.PDF, handle_pdf)
+    )
+
+    print("🚀 Bot started!")
+    application.run_polling(stop_signals=None)
+
+
+if __name__ == "__main__":
+    main()
